@@ -1,0 +1,13 @@
+Taxa,Phylum,Level
+p__Actinobacteria,Actinobacteria,Phylum
+p__Firmicutes,Firmicutes,Phylum
+c__Actinobacteria,Actinobacteria,Class
+c__Clostridia,Firmicutes,Class
+o__Bifidobacteriales,Actinobacteria,Order
+o__Clostridiales,Firmicutes,Order
+f__Bifidobacteriaceae,Actinobacteria,Family
+f__Lachnospiraceae,Firmicutes,Family
+g__.Ruminococcus.,Firmicutes,Genus
+g__Bifidobacterium,Actinobacteria,Genus
+g__Blautia,Firmicutes,Genus
+g__Dorea,Firmicutes,Genus

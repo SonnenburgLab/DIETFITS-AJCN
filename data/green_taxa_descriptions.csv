@@ -1,0 +1,15 @@
+Taxa,Phylum,Level
+c__Betaproteobacteria,Proteobacteria,Class
+c__Deltaproteobacteria,Proteobacteria,Class
+o__Burkholderiales,Proteobacteria,Order
+o__Desulfovibrionales,Proteobacteria,Order
+f__.Odoribacteraceae.,Bacteroidetes,Family
+f__Alcaligenaceae,Proteobacteria,Family
+f__Desulfovibrionaceae,Proteobacteria,Family
+f__Rikenellaceae,Bacteroidetes,Family
+g__Bilophila,Proteobacteria,Genus
+g__Butyricimonas,Bacteroidetes,Genus
+g__Desulfovibrio,Proteobacteria,Genus
+g__Lachnospira,Firmicutes,Genus
+g__Oscillospira,Firmicutes,Genus
+g__Sutterella,Proteobacteria,Genus

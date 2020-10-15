@@ -1,0 +1,343 @@
+---
+title: "DIETFITS code AJCN figures"
+author: "GK Fragiadakis"
+date: "10/13/20"
+output: html_document
+---
+
+## Intro:
+
+Here is the code to generate the main figures in the manuscript. Note: orange diet is "low-fat", green diet is "low-carb", following the color scheme in the manuscript. 
+
+Load required packages for analysis:
+
+```{r}
+
+library(tidyverse)
+library(phyloseq)
+library(siggenes)
+
+```
+
+Loading the data:
+
+```{r}
+
+# set as working directory of github repo's R folder using setwd() and/or confirm using getwd():
+# setwd()
+
+getwd()
+
+rare_ps <- readRDS("../data/DIETFITS_dada2_phyloseq_obj_rarefied.rds")
+
+```
+
+Removing duplicate timepoints (some patients had multiple samples per timepoint):
+
+```{r}
+metadata <- data.frame(rare_ps@sam_data) %>% select(old_record_id, CollectionTime)
+
+Duplicate_timepoint <- duplicated(metadata)
+
+rare_ps@sam_data$Duplicate_timepoint <- Duplicate_timepoint
+
+# rarefied phyloseq object with duplicates removed:
+
+diet_ps <- subset_samples(rare_ps, Duplicate_timepoint == FALSE)
+
+```
+
+## Taxa summaries
+
+Calculates taxa composotion summaries at all levels ("Phylum", "Class", "Order", "Family", "Genus") and combines into a single data frame with metadata for analysis:
+
+```{r}
+
+# summarize taxa function: 
+
+summarize_taxa <- function(phyloseq_obj, Rank, normalize = TRUE){
+
+  taxa_df <- data.frame(phyloseq_obj@tax_table, stringsAsFactors = TRUE)
+  otu_df <- data.frame(phyloseq_obj@otu_table)
+
+  # renaming NA values from unassigned taxa as "Unassigned"
+  levels(taxa_df[, Rank]) <- c(levels(taxa_df[, Rank]), "Unassigned")
+  taxa_df[, Rank][is.na(taxa_df[, Rank])] <- "Unassigned"
+
+  summary_data <- mat.or.vec(nr = dim(phyloseq_obj@otu_table)[2],
+                             nc = length(levels(taxa_df[, Rank])))
+  rownames(summary_data) <- colnames(phyloseq_obj@otu_table)
+  colnames(summary_data) <- levels(taxa_df[, Rank])
+
+  # ensure the components of the phyloseq object match
+  if (identical(rownames(taxa_df), rownames(otu_df)) == FALSE){
+    stop("Taxa and otu rownames don't match. Reformat phyloseq object.")
+  }
+
+  for (taxa in levels(taxa_df[, Rank])){
+    taxa_counts <- apply(otu_df[taxa_df[, Rank] == taxa, ], 2, sum)
+    summary_data[ , taxa] <- taxa_counts
+  }
+
+  if (normalize == TRUE){
+    sums <- apply(summary_data, 1, sum)
+    summary_data <- apply(summary_data, 2, function(x) x/sums)
+  }
+
+  return(summary_data)
+
+}
+
+
+ranks_of_interest <- c("Phylum", "Class", "Order", "Family", "Genus")
+
+summary_list <- list()
+
+for (rank in ranks_of_interest){
+  
+  summary_mat <- summarize_taxa(diet_ps, Rank = rank, normalize = TRUE)
+  summary_df <- data.frame(SampleID = diet_ps@sam_data$SampleID, summary_mat) %>% 
+    plyr::rename(c("Unassigned" = paste(rank, "_Unassigned")))
+  summary_list[[rank]] <- summary_df
+  
+}
+
+taxa_summaries <- Reduce(left_join, summary_list)
+
+formatted_metadata <- data.frame(diet_ps@sam_data) %>% 
+                            select(SampleID, Group, old_record_id, CollectionTime) %>% 
+                            dplyr::rename(Timepoint = CollectionTime) %>%
+                            dplyr::rename(Participant = old_record_id)
+
+taxa_summaries <- left_join(formatted_metadata, taxa_summaries)
+
+taxa_summaries$Timepoint <- as.numeric(taxa_summaries$Timepoint)
+
+```
+
+Running SAM to assess differences between timepoints: 
+
+```{r}
+
+## function to run SAM two-class paired 
+
+SAM_obesity_dada2 <- function(data, diet, t1, t2){
+  
+  data_select_diet <- dplyr::filter(data, Group == diet)
+
+    # restricting to the participants that have data for both of those time points
+  selected_participants_t1 <- data_select_diet %>% dplyr::filter(Timepoint == t1) %>% select(Participant)
+  selected_participants_t2 <- data_select_diet %>% dplyr::filter(Timepoint == t2) %>% select(Participant)
+  selected_participants <- dplyr::intersect(selected_participants_t1, selected_participants_t2) %>% .[,1]
+  
+  
+  print(paste("Chosen diet has ", length(selected_participants), " ppts", sep = ""))
+
+  
+  # check other diet, see how many have:
+  
+  data_other_diet <- dplyr::filter(data, Group != diet)
+
+  selected_participants_t1 <- data_other_diet %>% dplyr::filter(Timepoint == t1) %>% select(Participant)
+  selected_participants_t2 <- data_other_diet %>% dplyr::filter(Timepoint == t2) %>% select(Participant)
+  selected_participants_other_diet <- dplyr::intersect(selected_participants_t1, selected_participants_t2)  %>% .[,1]
+  
+    print(paste("Other diet has ", length(selected_participants_other_diet), " ppts", sep = "")) 
+
+  # restrict to minimum # of the 2 diets
+    
+    if (length(selected_participants) > length(selected_participants_other_diet)){
+      set.seed(1)
+ selected_participants <- sample(selected_participants, length(selected_participants_other_diet), replace = FALSE)
+    }
+    
+  print(paste("Using ", length(selected_participants), " ppts", sep = ""))
+
+# now setting up the SAM
+  df <- data_select_diet %>% dplyr::filter(Participant %in% selected_participants) %>% 
+    dplyr::filter(Timepoint == t1 | Timepoint == t2)
+
+  
+  sam_key <- df %>% select(Participant, Timepoint) %>% mutate(Sam_index = Timepoint)
+  sam_key[sam_key$Sam_index == t1, "Sam_index"] <- -1
+  sam_key[sam_key$Sam_index == t2, "Sam_index"] <- 1
+
+
+  k = 1
+  for (i in unique(sam_key$Participant)){
+    sam_key[sam_key$Participant == i, "Participant_ID"] <- k
+    k <- k + 1
+  }
+
+  sam_key <- sam_key %>% mutate(SAM_ID = Sam_index*Participant_ID) %>% select(Participant, Timepoint, SAM_ID)
+
+    df <- left_join(sam_key, df)
+
+  # Run Model
+
+  y <- df[, "SAM_ID"]
+  x <- df %>% select(-Participant, -Timepoint, -SAM_ID, -SampleID, -Group) %>% t()
+
+  sam_model <- siggenes::sam(data = x, cl = y, gene.names = rownames(x))
+  return(sam_model)
+  
+}
+
+
+## Running the function:  cycle through both diets and all time points compared to baseline
+
+taxa_SAM_results <- list()
+
+for (diet_type in c("green", "orange")){
+  
+  for (time in c(2, 3, 4, 5)){
+    
+    condition <- paste(diet_type, "_1_", time, sep = "")
+    model_result <- SAM_obesity_dada2(data = taxa_summaries, diet = diet_type, t1 = 1, t2 = time)
+    taxa_SAM_results[[condition]] <- summary(model_result, 1.1)
+    
+  }
+  
+}
+
+# Big changes 0 to 3 months, but not in the subsequent times. 
+# q-value < 0.05
+
+```
+
+
+Confirmation that there are are not baseline differences between the two diet groups: 
+
+
+```{r}
+
+bl_df <- taxa_summaries %>% dplyr::filter(Timepoint == 1)
+bl_df$Group <- recode(bl_df$Group, orange = 0, green = 1)
+
+  y <- bl_df$Group
+  x <- bl_df %>% select(-Participant, -Timepoint, -SampleID, -Group) %>% t()
+
+  sam_model <- siggenes::sam(data = x, cl = y, gene.names = rownames(x))
+  test <- siggenes::findDelta(sam_model, fdr = 0.05)
+
+```
+
+
+Looking at the three month result in each diet: 
+
+
+```{r}
+
+green_taxa <- names(taxa_SAM_results[["green_1_2"]]@row.sig.genes)
+green_taxa
+
+orange_taxa <- names(taxa_SAM_results[["orange_1_2"]]@row.sig.genes)
+orange_taxa
+
+overlapping_changes <- intersect(green_taxa, orange_taxa)
+overlapping_changes
+# Whole bacteroides lineage
+# Whole parabacteroides lineage
+
+plot_df <- gather(taxa_summaries, key = "Taxa", value = "Abundance", p__Actinobacteria:`Genus _Unassigned`) %>%
+  dplyr::filter(Timepoint == 1 | Timepoint == 2)
+#plot_df <- gather(taxa_summaries, key = "Taxa", value = "Abundance", p__Actinobacteria:`Genus _Unassigned`)
+plot_df$Timepoint <- factor(plot_df$Timepoint)
+```
+
+Plot for Figure 4A: 
+
+```{r}
+
+overlap_df <- dplyr::filter(plot_df, Taxa %in% overlapping_changes)
+overlap_df$Taxa <- factor(overlap_df$Taxa, levels = c("p__Bacteroidetes", "c__Bacteroidia", "o__Bacteroidales", "f__Bacteroidaceae", "g__Bacteroides", "f__Porphyromonadaceae", "g__Parabacteroides"))
+ggplot(overlap_df, aes(x = Timepoint, y = Abundance)) + geom_boxplot(aes(fill = Group)) + facet_wrap(~Taxa, ncol = 5, scales = "free") + scale_fill_manual(values = c("#99d594","#fc8d59")) + theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(),
+        panel.border = element_rect(colour = "black"))
+
+```
+
+Plot for Figure 3A (Green diet/ low-carb changes only):
+
+```{r}
+
+green_only <- green_taxa[!(green_taxa %in% overlapping_changes)]
+green_df <- dplyr::filter(plot_df, Taxa %in% green_only)
+green_df$Taxa <- factor(green_df$Taxa, levels = c("c__Betaproteobacteria", "o__Burkholderiales", "f__Alcaligenaceae", "g__Sutterella", "c__Deltaproteobacteria", "o__Desulfovibrionales", "f__Desulfovibrionaceae", "g__Desulfovibrio", "g__Bilophila", "f__.Odoribacteraceae.", "g__Butyricimonas", "f__Rikenellaceae","g__Oscillospira", "g__Lachnospira" ))
+
+
+green_taxa_descriptions <- read.csv("../data/green_taxa_descriptions.csv")
+green_df_full <- left_join(green_df, green_taxa_descriptions)
+green_df_full$Timepoint <- factor(green_df_full$Timepoint)
+green_df_full$Level <- factor(green_df_full$Level, levels = c("Class","Order","Family","Genus"))
+green_df_full$Phylum <- factor(green_df_full$Phylum, levels = c("Proteobacteria","Bacteroidetes", "Firmicutes"))
+
+
+ggplot(green_df_full, aes(x = Timepoint, y = Abundance)) + geom_boxplot(aes(fill = Phylum)) + facet_wrap(~Taxa, ncol = 4, scales = "free") + scale_fill_manual(values = c("tomato","lightgoldenrod1", "skyblue2")) + theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(),
+        panel.border = element_rect(colour = "black"))
+```
+
+Plot for Figure 3B (Orange diet/ low-fat changes only):
+
+```{r}
+
+orange_only <- orange_taxa[!(orange_taxa %in% overlapping_changes)]
+orange_df <- dplyr::filter(plot_df, Taxa %in% orange_only)
+orange_df$Taxa <- factor(orange_df$Taxa, levels = c("p__Firmicutes", "c__Clostridia", "o__Clostridiales", "f__Lachnospiraceae", "g__Blautia" , "g__Dorea", "g__.Ruminococcus.", "p__Actinobacteria", "c__Actinobacteria", "o__Bifidobacteriales", "f__Bifidobacteriaceae", "g__Bifidobacterium"))
+
+orange_taxa_descriptions <- read.csv("../data/orange_taxa_descriptions.csv")
+
+# adding a superfluous plot so same dims as the green plot 
+added_for_img <- dplyr::filter(green_df_full, Taxa == "g__Oscillospira")
+orange_df_full <- left_join(orange_df, orange_taxa_descriptions)
+orange_df_full$Timepoint <- factor(orange_df_full$Timepoint)
+orange_df_full <- bind_rows(orange_df_full, added_for_img)
+orange_df_full$Level <- factor(orange_df_full$Level, levels = c("Phylum", "Class","Order","Family","Genus"))
+orange_df_full$Phylum <- factor(orange_df_full$Phylum, levels = c("Actinobacteria", "Firmicutes"))
+
+orange_df_full <- orange_df_full %>% arrange(Phylum, Level)
+orange_df_full$Taxa <- factor(orange_df_full$Taxa, levels = unique(orange_df_full$Taxa))
+ggplot(orange_df_full, aes(x = Timepoint, y = Abundance)) + geom_boxplot(aes(fill = Phylum)) + facet_wrap(~Taxa, ncol = 4, scales = "free") + theme_classic() + scale_fill_manual(values = c("plum2", "skyblue2"))
+
+ggplot(orange_df_full, aes(x = Timepoint, y = Abundance)) + geom_boxplot(aes(fill = Phylum)) + facet_wrap(~Taxa, ncol = 4, scales = "free") + scale_fill_manual(values = c("plum2", "skyblue2")) + theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(),
+        panel.border = element_rect(colour = "black"))
+
+# note! Oscillospira is not one of the results! In there to force scale
+
+
+```
+
+Beta diversity (Figure 2):
+
+```{r}
+
+diet_ord_bray <- ordinate(diet_ps, "PCoA", "bray")
+
+PC_df <- data.frame(diet_ord_bray$vectors[, 1:3], 
+                    Participant = diet_ps@sam_data$old_record_id, 
+                    Group = diet_ps@sam_data$Group,
+                    Timepoint = diet_ps@sam_data$CollectionTime) %>%
+        mutate(T2 = Timepoint == 2) %>% mutate(T1 = Timepoint == 1) %>% arrange(Axis.1) 
+
+# reordering ppts
+PC_df$Participant <- factor(PC_df$Participant, levels = unique(PC_df$Participant))
+
+
+# Figure 2
+
+ggplot(PC_df, aes(x = Axis.1, y = Participant, group = Participant)) + 
+  geom_line(colour = "grey") + geom_point(aes(colour = T2, shape = T1)) +  
+  facet_grid(Group ~., scales = "free_y") + theme_classic() + 
+  scale_colour_manual(values = c("slategrey", "brown1")) + ggtitle("Bray Curtis over time") +
+  scale_shape_manual(values=c(20, 1))
+
+```
+

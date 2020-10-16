@@ -28,7 +28,50 @@ Loading the data:
 
 getwd()
 
+nutrition_data <- readRDS("../data/nutrition_data.rds")
 rare_ps <- readRDS("../data/DIETFITS_dada2_phyloseq_obj_rarefied.rds")
+
+```
+
+Plotting nutrition data (Figure 1B):
+
+```{r}
+
+ggplot(nutrition_data, aes(x=CollectionTime, y=weight, fill=Group)) +
+  labs(title="Weight over time")+ 
+  geom_boxplot() + scale_fill_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  scale_color_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  theme_classic(base_size = 25)+scale_x_discrete(breaks=c(1,2,3,5), labels=c("BL", "3", "6","12")) + 
+  labs(x="Timepoint (months)",y="Weight (kg)")
+
+ggplot(nutrition_data,aes(x=CollectionTime,y=total_gfat,fill=Group)) + 
+  geom_boxplot()+scale_fill_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  scale_color_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+theme_classic(base_size = 25)+
+  scale_x_discrete(breaks=c(1,2,3,5), labels=c("BL", "3", "6","12")) + 
+  labs(title="Fat intake through time",x="Timepoint (months)",y="Total Fat (g)")
+
+ggplot(nutrition_data,aes(x=CollectionTime,y=total_carb,fill=Group)) + 
+  geom_boxplot()+scale_fill_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  scale_color_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  theme_classic(base_size = 25) +scale_x_discrete(breaks=c(1,2,3,5),labels=c("BL", "3", "6","12")) + 
+  labs(title="Carbohydrate intake through time",x="Timepoint (month)", y="Total Carbohydrate (g)")
+
+ggplot(nutrition_data,aes(x=CollectionTime,y=total_dietary_fiber,fill=Group)) + 
+  geom_boxplot()+scale_fill_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  theme_classic()+scale_color_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat")) + 
+  scale_x_discrete(breaks=c(1,2,3,5), labels=c("BL", "3", "6","12")) + 
+  labs(title="Total change in dietary fiber through time", x="Timepoint",y="Total Dietary Fiber (g)")
+
+ggplot(nutrition_data,aes(x=CollectionTime,y=total_protein,fill=Group)) + 
+  geom_boxplot()+scale_fill_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  theme_classic(base_size = 25) + scale_x_discrete(breaks=c(1,2,3,5),labels=c("Baseline", "3 months", "6 months","12 months")) +
+  labs(title="Protein intake through time", x="Timepoint",y="Total Protein (g)")
+
+ggplot(nutrition_data,aes(x=CollectionTime,y=energy,fill=Group)) + 
+  geom_boxplot()+scale_fill_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  scale_color_manual(values=c("#99d594","#fc8d59"),labels=c("Low Carb", "Low Fat"))+
+  theme_classic(base_size = 25) + scale_x_discrete(breaks=c(1,2,3,5),  labels=c("BL", "3", "6","12")) + 
+  labs(title="Calorie intake through time", x="Timepoint (month)",y="Total kcal")
 
 ```
 

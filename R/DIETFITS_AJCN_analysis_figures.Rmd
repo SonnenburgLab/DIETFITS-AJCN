@@ -481,7 +481,14 @@ for (i in c(1:length(allNames))){
   
 }
 
-all_taxa__weight_LME <- loop_lme(df = taxa_table_weight_var,
+# rescaling data:
+
+taxa_table_weight_var <- na.omit(taxa_table_weight_var)
+taxa_only <- select(taxa_table_weight_var,Weight,p__Actinobacteria:Unassigned)
+taxa_minMax <- apply(taxa_only,2,function(x) (x-min(x))/(max(x)-min(x)))
+taxa_minMax_data <- data.frame(select(taxa_table_weight_var,-(p__Actinobacteria:Unassigned),-Weight),taxa_minMax) 
+
+all_taxa__weight_LME <- loop_lme(df = taxa_minMax_data,
                                   id = "old_record_id",
                                   vectorNames = allNames_keep,
                                   yVar = "Weight",
@@ -498,5 +505,6 @@ significant_taxa_weight <- all_taxa__weight_LME %>%
                                 
 
 kable(significant_taxa_weight)
+
 ```
 

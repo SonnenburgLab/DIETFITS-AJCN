@@ -16,6 +16,8 @@ Load required packages for analysis:
 library(tidyverse)
 library(phyloseq)
 library(siggenes)
+library(nlme)
+library(knitr)
 
 ```
 
@@ -29,6 +31,7 @@ Loading the data:
 getwd()
 
 nutrition_data <- readRDS("../data/nutrition_data.rds")
+weight_BMI <- readRDS("../data/weight_BMI.rds")
 rare_ps <- readRDS("../data/DIETFITS_dada2_phyloseq_obj_rarefied.rds")
 
 ```
@@ -382,5 +385,118 @@ ggplot(PC_df, aes(x = Axis.1, y = Participant, group = Participant)) +
   scale_colour_manual(values = c("slategrey", "brown1")) + ggtitle("Bray Curtis over time") +
   scale_shape_manual(values=c(20, 1))
 
+```
+
+
+# To do: 
+- get BMI object to read in
+- translate variables (sig_taxa_green == green_taxa; sig_taxa_orange == orange_taxa; taxa_summaries == taxa_table)
+
+```{r}
+
+weight_BMI <- readRDS(file = "../data/weight_BMI.rds")
+
+# sig_taxa_orange <- readRDS("~/Desktop/temp_DIETFITS/DIETFITS_sig_orange_taxa.rds") -> orange_taxa
+# sig_taxa_green <- readRDS("~/Desktop/temp_DIETFITS/DIETFITS_sig_green_taxa.rds") -> green_taxa
+
+taxa_table <- taxa_summaries %>%  dplyr::rename(.,old_record_id=Participant,CollectionTime=Timepoint) 
+
+sig_taxa_all <- intersect(orange_taxa,green_taxa)
+
+taxa_table_weight <- left_join(taxa_table, select(weight_BMI,old_record_id,Weight,CollectionTime),   by=c("old_record_id","CollectionTime")) %>% dplyr::rename(.,"Unassigned"="Genus _Unassigned")
+
+taxa_table_orange <- select_(taxa_table_weight,.dots = c("old_record_id","Group","CollectionTime","Weight",orange_taxa)) %>%
+                      dplyr::filter(Group=="orange")
+
+taxa_table_green <- select_(taxa_table_weight,.dots = c("old_record_id","Group","CollectionTime","Weight",green_taxa)) %>%
+                      dplyr::filter(Group=="green")
+
+taxa_table_all <- select_(taxa_table_weight,.dots = c("old_record_id","Group","CollectionTime","Weight",sig_taxa_all))
+
+
+loop_lme <- function(df, id, vectorNames, yVar, xColName){
+  
+  pValueList <- c()
+  xList <- c()
+  correValueList <- c()
+  stdEList <-c()
+  
+  for (i in vectorNames){
+    
+    newdf <- data.frame(yVar = df[,yVar], xColName = df[, i], id = df[,id])
+    lmeData <- lme(yVar ~ xColName, data = newdf,random = ~1|id,na.action = na.omit)
+    pVal = summary(lmeData)$tTable[2,5]
+    corre = summary(lmeData)$tTable[2,1]
+    stdE = summary(lmeData)$tTable[2,2]
+    xList <- c(xList,i)
+    pValueList <- c(pValueList,pVal)
+    correValueList <- c(correValueList,corre)
+    stdEList <- c(stdEList,stdE)
+  }
+  
+  pTable <- c()
+  pTable <- data.frame(xColName = xList, correlation = correValueList, pValue = pValueList, pValueAdj = p.adjust(pValueList,method="BH"),stdE=stdEList)
+  
+}
+
+# examning features that may be associated with weight based on significant changes IDed previously
+
+taxa_LME_sigOrange_weight <- loop_lme(df = taxa_table_orange,
+                                      id = "old_record_id",
+                                      vectorNames = orange_taxa,
+                                      yVar = "Weight",
+                                      xColName = Taxa)
+
+taxa_LME_sigGreen_weight <- loop_lme(df = na.omit(taxa_table_green),
+                                     id = "old_record_id",
+                                     vectorNames = green_taxa,
+                                     yVar = "Weight",
+                                     xColName = Taxa)
+
+taxa_LME_sigAll_weight <- loop_lme(df = na.omit(taxa_table_all),
+                                   id = "old_record_id",
+                                   vectorNames = sig_taxa_all,
+                                   yVar = "Weight",
+                                   xColName = Taxa)
+
+# assessing how all taxa vary with weight using LME (Figure 4B): 
+
+taxa_table_weight_var <- taxa_table_weight[ - as.numeric(which(apply(taxa_table_weight, 2, var,na.rm=TRUE) == 0))] %>%
+                          dplyr::rename(.,Family._Unassigned=`Family _Unassigned`)
+
+allNames <-colnames(select(taxa_table_weight_var,p__Actinobacteria:Unassigned))
+
+# filtering to taxa present (>1%) in at least 5% of samples: 
+
+allNames_keep <- c()
+j <- 1
+
+for (i in c(1:length(allNames))){
+  
+  if(sum(taxa_table_weight_var[,allNames[i]]>=0.01,na.rm=TRUE)/length(taxa_table_weight_var[,allNames[i]])>=0.05){
+    allNames_keep[[j]] <- allNames[i]
+    j=j+1
+    
+  }
+  
+}
+
+all_taxa__weight_LME <- loop_lme(df = taxa_table_weight_var,
+                                  id = "old_record_id",
+                                  vectorNames = allNames_keep,
+                                  yVar = "Weight",
+                                  xColName = Taxa)
+
+# 4B results:
+
+significant_taxa_weight <- all_taxa__weight_LME %>% 
+                                dplyr::filter(pValueAdj < 0.05) %>% 
+                                arrange(pValueAdj) %>%
+                                rename(Feature = xColName) %>%
+                                rename(adjusted_pvalue = pValueAdj) %>% 
+                                select(Feature, correlation, adjusted_pvalue)
+                                
+
+kable(significant_taxa_weight)
 ```
 

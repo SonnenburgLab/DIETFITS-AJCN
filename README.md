@@ -1,6 +1,7 @@
 ## Long-term dietary intervention reveals resilience of the gut microbiota despite changes in diet and weight
 
 GK Fragiadakis and HC Wastyk
+
 October 16th, 2020
 
 This repo contains the data and code for generating the figures appearing in: 
